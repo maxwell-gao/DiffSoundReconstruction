@@ -1,0 +1,23 @@
+name: diffSoundReconstruction
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - numpy
+  - pandas
+  - Pillow
+  - diffusers==0.24.0
+  - librosa
+  - datasets>=2.9.0
+  - gradio
+  - streamlit
+  - tensorboard
+  - accelerate
+  - transformers
+  - torchvision
+  - pip
+  - pip:
+    - bdpy
+    - fastl2lir
+    - argparse
