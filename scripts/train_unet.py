@@ -1,5 +1,5 @@
 # based on https://github.com/huggingface/diffusers/blob/main/examples/train_unconditional.py
-
+# gsq!
 import argparse
 import os
 import pickle
