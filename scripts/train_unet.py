@@ -1,12 +1,14 @@
 # based on https://github.com/huggingface/diffusers/blob/main/examples/train_unconditional.py
-# gsq!
 import argparse
+import sys
 import os
 import pickle
 import random
 from pathlib import Path
 from typing import Optional
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
+import scipy.io as sio
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -16,7 +18,7 @@ from datasets import load_dataset, load_from_disk
 from diffusers import (AutoencoderKL, DDIMScheduler, DDPMScheduler,
                        UNet2DConditionModel, UNet2DModel)
 from diffusers.optimization import get_scheduler
-from diffusers.pipelines.audio_diffusion import Mel
+from audiodiffusion.mel import Mel
 from diffusers.training_utils import EMAModel
 from huggingface_hub import HfFolder, Repository, whoami
 from librosa.util import normalize
@@ -47,7 +49,7 @@ def main(args):
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
         log_with="tensorboard",
-        logging_dir=logging_dir,
+        project_dir=logging_dir
     )
 
     if args.dataset_name is not None:
@@ -86,17 +88,22 @@ def main(args):
             ]
         else:
             images = [augmentations(image) for image in examples["image"]]
-        if args.encodings is not None:
-            encoding = [encodings[file] for file in examples["audio_file"]]
-            return {"input": images, "encoding": encoding}
+        if args.feat_dir is not None:
+            feats = []
+            for file in examples["audio_file"]:
+                mat_file_path = os.path.join(args.feat_dir, os.path.splitext(os.path.basename(file))[0] + '.mat')
+                mat_contents = sio.loadmat(mat_file_path)
+                feat = mat_contents['feat']
+                feat = np.squeeze(feat)  # Remove the first dimension
+                feats.append(feat)
+            return {"input": images, "feat": feats}
         return {"input": images}
 
     dataset.set_transform(transforms)
     train_dataloader = torch.utils.data.DataLoader(
         dataset, batch_size=args.train_batch_size, shuffle=True)
 
-    if args.encodings is not None:
-        encodings = pickle.load(open(args.encodings, "rb"))
+
 
     vqvae = None
     if args.vae is not None:
@@ -118,7 +125,7 @@ def main(args):
             vqvae = pipeline.vqvae
 
     else:
-        if args.encodings is None:
+        if args.feat_dir is None:
             model = UNet2DModel(
                 sample_size=resolution if vqvae is None else latent_resolution,
                 in_channels=1
@@ -148,25 +155,13 @@ def main(args):
         else:
             model = UNet2DConditionModel(
                 sample_size=resolution if vqvae is None else latent_resolution,
-                in_channels=1
-                if vqvae is None else vqvae.config["latent_channels"],
-                out_channels=1
-                if vqvae is None else vqvae.config["latent_channels"],
+                in_channels=1 if vqvae is None else vqvae.config["latent_channels"],
+                out_channels=1 if vqvae is None else vqvae.config["latent_channels"],
                 layers_per_block=2,
                 block_out_channels=(128, 256, 512, 512),
-                down_block_types=(
-                    "CrossAttnDownBlock2D",
-                    "CrossAttnDownBlock2D",
-                    "CrossAttnDownBlock2D",
-                    "DownBlock2D",
-                ),
-                up_block_types=(
-                    "UpBlock2D",
-                    "CrossAttnUpBlock2D",
-                    "CrossAttnUpBlock2D",
-                    "CrossAttnUpBlock2D",
-                ),
-                cross_attention_dim=list(encodings.values())[0].shape[-1],
+                down_block_types=("CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "DownBlock2D"),
+                up_block_types=("UpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D"),
+                cross_attention_dim=512 * 5 * 21,
             )
 
     if args.scheduler == "ddpm":
@@ -268,9 +263,12 @@ def main(args):
 
             with accelerator.accumulate(model):
                 # Predict the noise residual
-                if args.encodings is not None:
-                    noise_pred = model(noisy_images, timesteps,
-                                       batch["encoding"])["sample"]
+                if args.feat_dir is not None:
+                    feats = batch["feat"]
+                    feats = torch.tensor(feats).to(clean_images.device)
+                    feats = feats.view(bsz, -1)  # Reshape to (batch_size, 512 * 5 * 21)
+                    print("Feats shape:", feats.shape)
+                    noise_pred = model(noisy_images, timesteps, feats)["sample"]
                 else:
                     noise_pred = model(noisy_images, timesteps)["sample"]
                 loss = F.mse_loss(noise_pred, noise)
@@ -332,21 +330,20 @@ def main(args):
                 generator = torch.Generator(
                     device=clean_images.device).manual_seed(42)
 
-                if args.encodings is not None:
+                if args.test_dir is not None:
                     random.seed(42)
-                    encoding = torch.stack(
-                        random.sample(list(encodings.values()),
-                                      args.eval_batch_size)).to(
-                                          clean_images.device)
+                    feat_files = [os.path.join(args.test_dir, f"{file}.mat") for file in batch["audio_file"]]
+                    feat_data = [load_mat_file(file) for file in feat_files]
+                    test_feat = torch.stack(feat_data).squeeze(1).to(clean_images.device)
                 else:
-                    encoding = None
+                    test_feat = None
 
                 # run pipeline in inference (sample random noise and denoise)
                 images, (sample_rate, audios) = pipeline(
                     generator=generator,
                     batch_size=args.eval_batch_size,
                     return_dict=False,
-                    encoding=encoding,
+                    encoding=test_feat,
                 )
 
                 # denormalize the images and save to tensorboard
@@ -434,12 +431,14 @@ if __name__ == "__main__":
         help="pretrained VAE model for latent diffusion",
     )
     parser.add_argument(
-        "--encodings",
-        type=str,
-        default=None,
-        help="picked dictionary mapping audio_file to encoding",
+    "--feat_dir",
+    type=str,
+    default="./featureMAT",
+    help="Directory containing the MAT files with feature tensors.",
     )
 
+    parser.add_argument("--test_dir", type=str, default=None, help="Directory for test dataset MAT files.")
+    
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
