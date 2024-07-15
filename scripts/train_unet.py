@@ -161,7 +161,7 @@ def main(args):
                 block_out_channels=(128, 256, 512, 512),
                 down_block_types=("CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "DownBlock2D"),
                 up_block_types=("UpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D"),
-                cross_attention_dim=512 * 5 * 21,
+                cross_attention_dim= 64 * 5 * 21,
             )
 
     if args.scheduler == "ddpm":
@@ -266,7 +266,8 @@ def main(args):
                 if args.feat_dir is not None:
                     feats = batch["feat"]
                     feats = torch.tensor(feats).to(clean_images.device)
-                    feats = feats.view(bsz, -1)  # Reshape to (batch_size, 512 * 5 * 21)
+                    # Reshape feats to (bzs, 512, 5 * 21)
+                    feats = feats.view(bsz, 8, 21 * 5 * 64)
                     print("Feats shape:", feats.shape)
                     noise_pred = model(noisy_images, timesteps, feats)["sample"]
                 else:

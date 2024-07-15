@@ -3,11 +3,11 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.8
+  - python==3.8
   - numpy
   - pandas
   - Pillow
-  - diffusers==0.24.0
+  - diffusers
   - librosa
   - datasets>=2.9.0
   - gradio
@@ -16,6 +16,9 @@ dependencies:
   - accelerate
   - transformers
   - torchvision
+  - omegaconf
+  - pytorch_lightning==1.7.7
+  - einops
   - pip
   - pip:
     - bdpy
