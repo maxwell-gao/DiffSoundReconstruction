@@ -361,20 +361,25 @@ def main(args):
                             mat_contents = sio.loadmat(mat_file_path)
                             feat = mat_contents['feat']
                             feat = np.squeeze(feat)  # Remove the first dimension
-                            test_feats.append(feat)
+                            test_feats.append(feat)  # Convert numpy array to tensor and move to the correct device
                     test_feats = torch.tensor(test_feats).to(clean_images.device)
-                    test_feats = test_feats.view(len(test_feats), 8, 21*5*64)
+                    # test_feats = test_feats.view(len(test_feats), 8, 21*5*64)
                     print("Test feat: ", test_feats.shape)
-                    # Reshape to (batch_size, 8, 21*5*64)
+                    # Randomly sample 16 test features
+                    sampled_indices = random.sample(range(test_feats.shape[0]), args.eval_batch_size)
+                    sampled_feats = test_feats[sampled_indices]
+                    sampled_feats = sampled_feats.view(args.eval_batch_size, 8, 21*5*64)
+                    print("Sampled feats: ", sampled_feats.shape) 
+                    print("Sampled Test feat: ", sampled_feats.shape)
                 else:
-                    test_feats = None
+                    sampled_feats = None
 
                 # run pipeline in inference (sample random noise and denoise)
                 images, (sample_rate, audios) = pipeline(
                     generator=generator,
                     batch_size=args.eval_batch_size,
                     return_dict=False,
-                    encoding=test_feats,
+                    encoding=sampled_feats,
                 )
 
                 # denormalize the images and save to tensorboard
