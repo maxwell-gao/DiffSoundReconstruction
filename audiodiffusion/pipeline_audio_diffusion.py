@@ -157,7 +157,10 @@ class AudioDiffusionPipeline(DiffusionPipeline):
 
         for step, t in enumerate(self.progress_bar(self.scheduler.timesteps[start_step:])):
             if isinstance(self.unet, UNet2DConditionModel):
-                model_output = self.unet(images, t, encoding)["sample"]
+                
+                encoding = encoding.view(batch_size, 8, 21*5*64)
+                model_output = self.unet(images, t, encoder_hidden_states=encoding)["sample"]
+                # model_output = self.unet(images, t, encoding)["sample"]
             else:
                 model_output = self.unet(images, t)["sample"]
 
