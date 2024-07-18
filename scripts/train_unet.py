@@ -15,7 +15,7 @@ from datasets import load_dataset, load_from_disk
 from diffusers import (AutoencoderKL, DDIMScheduler, DDPMScheduler,
                        UNet2DConditionModel, UNet2DModel)
 from diffusers.optimization import get_scheduler
-from audiodiffusion.mel import Mel
+from mel import Mel
 from diffusers.training_utils import EMAModel
 from huggingface_hub import HfFolder, Repository, whoami
 from librosa.util import normalize
