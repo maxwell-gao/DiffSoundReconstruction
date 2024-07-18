@@ -1,13 +1,10 @@
-# based on https://github.com/huggingface/diffusers/blob/main/examples/train_unconditional.py
 import argparse
-import sys
 import os
 import pickle
 import random
 from pathlib import Path
 from typing import Optional
-sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-
+import sys
 import scipy.io as sio
 import numpy as np
 import torch
@@ -25,6 +22,7 @@ from librosa.util import normalize
 from torchvision.transforms import Compose, Normalize, ToTensor
 from tqdm.auto import tqdm
 
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from audiodiffusion.pipeline_audio_diffusion import AudioDiffusionPipeline
 
 logger = get_logger(__name__)
@@ -91,7 +89,8 @@ def main(args):
         if args.feat_dir is not None:
             feats = []
             for file in examples["audio_file"]:
-                mat_file_path = os.path.join(args.feat_dir, os.path.splitext(os.path.basename(file))[0] + '.mat')
+                mat_file_path = os.path.join(args.feat_dir, os.path.splitext(
+                    os.path.basename(file))[0] + '.mat')
                 mat_contents = sio.loadmat(mat_file_path)
                 feat = mat_contents['feat']
                 feat = np.squeeze(feat)  # Remove the first dimension
@@ -103,7 +102,30 @@ def main(args):
     train_dataloader = torch.utils.data.DataLoader(
         dataset, batch_size=args.train_batch_size, shuffle=True)
 
+    if args.test_dataset_name is not None:
+        if os.path.exists(args.test_dataset_name):
+            test_dataset = load_from_disk(
+                args.test_dataset_name,
+                storage_options=args.test_dataset_config_name)["test"]
 
+    def test_transforms(examples):
+        if args.test_dir is not None:
+            feats = []
+            for file in examples["audio_file"]:
+                mat_file_path = os.path.join(args.test_dir, os.path.splitext(
+                    os.path.basename(file))[0] + '.mat')
+                mat_contents = sio.loadmat(mat_file_path)
+                feat = mat_contents['feat']
+                feat = np.squeeze(feat)  # Remove the first dimension
+                feats.append(feat)
+            return {"feat": feats}
+        else:
+            return {}
+
+    # 设置 transforms
+    test_dataset.set_transform(test_transforms)
+    test_dataloader = torch.utils.data.DataLoader(
+        test_dataset, batch_size=args.train_batch_size, shuffle=False)
 
     vqvae = None
     if args.vae is not None:
@@ -159,9 +181,11 @@ def main(args):
                 out_channels=1 if vqvae is None else vqvae.config["latent_channels"],
                 layers_per_block=2,
                 block_out_channels=(128, 256, 512, 512),
-                down_block_types=("CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "DownBlock2D"),
-                up_block_types=("UpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D", "CrossAttnUpBlock2D"),
-                cross_attention_dim= 64 * 5 * 21,
+                down_block_types=(
+                    "CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "CrossAttnDownBlock2D", "DownBlock2D"),
+                up_block_types=("UpBlock2D", "CrossAttnUpBlock2D",
+                                "CrossAttnUpBlock2D", "CrossAttnUpBlock2D"),
+                cross_attention_dim=64 * 5 * 21,
             )
 
     if args.scheduler == "ddpm":
@@ -266,10 +290,11 @@ def main(args):
                 if args.feat_dir is not None:
                     feats = batch["feat"]
                     feats = torch.tensor(feats).to(clean_images.device)
-                    # Reshape feats to (bzs, 512, 5 * 21)
-                    feats = feats.view(bsz, 8, 21 * 5 * 64)
-                    print("Feats shape:", feats.shape)
-                    noise_pred = model(noisy_images, timesteps, feats)["sample"]
+                    # Reshape to (batch_size, 8, 21*5*64)
+                    feats = feats.view(bsz, 8, 21*5*64)
+                    # print("Feats shape:", feats.shape)
+                    noise_pred = model(noisy_images, timesteps, feats)[
+                        "sample"]
                 else:
                     noise_pred = model(noisy_images, timesteps)["sample"]
                 loss = F.mse_loss(noise_pred, noise)
@@ -327,24 +352,43 @@ def main(args):
                         auto_lfs_prune=True,
                     )
 
-            if (epoch + 1) % args.save_images_epochs == 0:
+            if (epoch + 1) % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
                 generator = torch.Generator(
                     device=clean_images.device).manual_seed(42)
 
                 if args.test_dir is not None:
+                    test_feats = []
                     random.seed(42)
-                    feat_files = [os.path.join(args.test_dir, f"{file}.mat") for file in batch["audio_file"]]
-                    feat_data = [load_mat_file(file) for file in feat_files]
-                    test_feat = torch.stack(feat_data).squeeze(1).to(clean_images.device)
+                    for file in os.listdir(args.test_dir):
+                        if file.endswith(".mat"):
+                            mat_file_path = os.path.join(args.test_dir, file)
+                            mat_contents = sio.loadmat(mat_file_path)
+                            feat = mat_contents['feat']
+                            # Remove the first dimension
+                            feat = np.squeeze(feat)
+                            # Convert numpy array to tensor and move to the correct device
+                            test_feats.append(feat)
+                    test_feats = torch.tensor(
+                        test_feats).to(clean_images.device)
+                    # test_feats = test_feats.view(len(test_feats), 8, 21*5*64)
+                    print("Test feat: ", test_feats.shape)
+                    # Randomly sample 16 test features
+                    sampled_indices = random.sample(
+                        range(test_feats.shape[0]), args.eval_batch_size)
+                    sampled_feats = test_feats[sampled_indices]
+                    sampled_feats = sampled_feats.view(
+                        args.eval_batch_size, 8, 21*5*64)
+                    print("Sampled feats: ", sampled_feats.shape)
+                    print("Sampled Test feat: ", sampled_feats.shape)
                 else:
-                    test_feat = None
+                    sampled_feats = None
 
                 # run pipeline in inference (sample random noise and denoise)
                 images, (sample_rate, audios) = pipeline(
                     generator=generator,
                     batch_size=args.eval_batch_size,
                     return_dict=False,
-                    encoding=test_feat,
+                    encoding=sampled_feats,
                 )
 
                 # denormalize the images and save to tensorboard
@@ -375,6 +419,14 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_config_name", type=str, default=None)
     parser.add_argument(
         "--train_data_dir",
+        type=str,
+        default=None,
+        help="A folder containing the training data.",
+    )
+    parser.add_argument("--test_dataset_name", type=str, default=None)
+    parser.add_argument("--test_dataset_config_name", type=str, default=None)
+    parser.add_argument(
+        "--test_data_dir",
         type=str,
         default=None,
         help="A folder containing the training data.",
@@ -432,14 +484,15 @@ if __name__ == "__main__":
         help="pretrained VAE model for latent diffusion",
     )
     parser.add_argument(
-    "--feat_dir",
-    type=str,
-    default="./featureMAT",
-    help="Directory containing the MAT files with feature tensors.",
+        "--feat_dir",
+        type=str,
+        default="./featureMAT",
+        help="Directory containing the MAT files with feature tensors.",
     )
 
-    parser.add_argument("--test_dir", type=str, default=None, help="Directory for test dataset MAT files.")
-    
+    parser.add_argument("--test_dir", type=str, default=None,
+                        help="Directory for test dataset MAT files.")
+
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
