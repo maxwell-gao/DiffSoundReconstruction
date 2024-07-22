@@ -23,7 +23,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 from tqdm.auto import tqdm
 
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-from audiodiffusion.pipeline_audio_diffusion import AudioDiffusionPipeline
+from pipeline import DiffusionPipeline
 
 logger = get_logger(__name__)
 
