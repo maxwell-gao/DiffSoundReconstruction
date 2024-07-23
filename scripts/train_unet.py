@@ -13,7 +13,7 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from datasets import load_dataset, load_from_disk
 from diffusers import (AutoencoderKL, DDIMScheduler, DDPMScheduler,
-                       UNet2DConditionModel, UNet2DModel)
+                       UNet2DConditionModel, UNet2DModel, DiffusionPipeline)
 from diffusers.optimization import get_scheduler
 from mel import Mel
 from diffusers.training_utils import EMAModel
@@ -22,8 +22,10 @@ from librosa.util import normalize
 from torchvision.transforms import Compose, Normalize, ToTensor
 from tqdm.auto import tqdm
 
+from audiodiffusion.pipeline_audio_diffusion import AudioDiffusionPipeline # load vae use Diffusion Pipeline, but inference can we use audiodiffusionpipeline or just DiffPipeline?
+
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-from pipeline import DiffusionPipeline
+# from pipeline import DiffusionPipeline
 
 logger = get_logger(__name__)
 
@@ -130,9 +132,11 @@ def main(args):
     vqvae = None
     if args.vae is not None:
         try:
-            vqvae = AutoencoderKL.from_pretrained(args.vae)
+            pipeline = DiffusionPipeline.from_pretrained(args.vae)
+            vqvae = pipeline.vqvae
+            # vqvae = AutoencoderKL.from_pretrained(args.vae)
         except EnvironmentError:
-            vqvae = AudioDiffusionPipeline.from_pretrained(args.vae).vqvae
+            vqvae = DiffusionPipeline.from_pretrained(args.vae).vqvae
         # Determine latent resolution
         with torch.no_grad():
             latent_resolution = vqvae.encode(
@@ -140,7 +144,7 @@ def main(args):
                             resolution)).latent_dist.sample().shape[2:]
 
     if args.from_pretrained is not None:
-        pipeline = AudioDiffusionPipeline.from_pretrained(args.from_pretrained)
+        pipeline = DiffusionPipeline.from_pretrained(args.from_pretrained)
         mel = pipeline.mel
         model = pipeline.unet
         if hasattr(pipeline, "vqvae"):
