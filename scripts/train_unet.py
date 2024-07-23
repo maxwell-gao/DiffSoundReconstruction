@@ -22,10 +22,10 @@ from librosa.util import normalize
 from torchvision.transforms import Compose, Normalize, ToTensor
 from tqdm.auto import tqdm
 
-from audiodiffusion.pipeline_audio_diffusion import AudioDiffusionPipeline # load vae use Diffusion Pipeline, but inference can we use audiodiffusionpipeline or just DiffPipeline?
+# from audiodiffusion.pipeline_audio_diffusion import AudioDiffusionPipeline # load vae use Diffusion Pipeline, but inference can we use audiodiffusionpipeline or just DiffPipeline?
 
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-# from pipeline import DiffusionPipeline
+from pipeline import AudioDiffusionPipeline
 
 logger = get_logger(__name__)
 
