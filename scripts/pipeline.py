@@ -17,7 +17,7 @@ from PIL import Image
 
 from mel import Mel
 
-class DiffusionPipeline(DiffusionPipeline):
+class AudioDiffusionPipeline(AudioDiffusionPipeline):
     """
     This model inherits from [`DiffusionPipeline`]. Check the superclass documentation for the generic methods the
     library implements for all the pipelines (such as downloading or saving, running on a particular device, etc.)
