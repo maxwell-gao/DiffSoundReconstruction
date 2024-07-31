@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument(
         "--sr",
         type=int,
-        default=22050,
+        default=16380,
         help="Sampling rate for audio generation",
     )
     parser.add_argument(
@@ -58,7 +58,7 @@ def parse_args():
     parser.add_argument(
         "--hop_length",
         type=int,
-        default=512,
+        default=256,
         help="Number of samples between successive frames",
     )
     parser.add_argument(
