@@ -24,3 +24,5 @@ dependencies:
     - bdpy
     - fastl2lir
     - argparse
+    - librosa
+    - soundfile
