@@ -5,11 +5,12 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision.transforms import ToPILImage, ToTensor
 from datasets import load_from_disk, load_dataset
-from diffusers import DiffusionPipeline
+from diffusers import DiffusionPipeline, AutoencoderKL
 from PIL import Image
 import librosa
 import soundfile as sf
 import matplotlib.pyplot as plt
+from io import BytesIO
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Evaluate VAE model with test dataset.")
@@ -82,37 +83,36 @@ def parse_args():
     return parser.parse_args()
 
 def load_vae_model(vae_path):
-    pipeline = DiffusionPipeline.from_pretrained(vae_path)
-    vae_model = pipeline.vqvae
+    try:
+        vae_model = AutoencoderKL.from_pretrained(vae_path)
+    except:
+        pipeline = DiffusionPipeline.from_pretrained(vae_path)
+        vae_model = pipeline.vqvae
     return vae_model
 
 def load_test_dataset(test_dataset_path, config_name=None):
     if os.path.exists(test_dataset_path):
-        test_dataset = load_from_disk(test_dataset_path, storage_options=config_name)["test"]
+        test_dataset = load_from_disk(test_dataset_path, storage_options=config_name)["train"]
     else:
         test_dataset = load_dataset(
             test_dataset_path,
             config_name,
             cache_dir=None,
-            split="test",
+            split="train",
         )
     return test_dataset
 
-def mel_spectrogram_to_image(S_db, top_db):
-    """Converts a Mel spectrogram to a PIL Image."""
-    S_db = np.clip(S_db, a_min=None, a_max=top_db)
-    S_db_normalized = (S_db - S_db.min()) / (S_db.max() - S_db.min()) * 255
-    S_db_image = Image.fromarray(S_db_normalized.astype(np.uint8))
-    return S_db_image
-
-def image_to_mel_spectrogram(image: Image.Image, top_db) -> np.ndarray:
-    """Converts a PIL Image back to a Mel spectrogram."""
-    bytedata = np.frombuffer(image.tobytes(), dtype="uint8").reshape((image.height, image.width))
-    log_S = bytedata.astype("float") * top_db / 255 - top_db
+# 将Byte data还原回Mel 频谱图Array
+def byte_to_mel(byte_data, top_db):
+    """Converts byte data back to a Mel spectrogram."""
+    image = Image.open(BytesIO(byte_data))
+    bytedata = np.array(image).astype("float32")
+    log_S = bytedata * top_db / 255 - top_db
     S = librosa.db_to_power(log_S)
     return S
 
-def mel_spectrogram_to_audio(S, sr, n_fft, hop_length, n_iter) -> np.ndarray:
+# 从 Mel 频谱图Array恢复音频
+def mel_spectrogram_to_audio(S, sr, n_fft, hop_length, n_iter):
     """Converts a Mel spectrogram to audio using Griffin-Lim."""
     audio = librosa.feature.inverse.mel_to_audio(
         S, sr=sr, n_fft=n_fft, hop_length=hop_length, n_iter=n_iter
@@ -149,9 +149,13 @@ def evaluate_vae(args):
         original_image = image
         reconstructed_image = ToPILImage()(reconstructed_data.squeeze(0))
         
-        # Print image resolutions
-        # print(f"Original Image Resolution: {original_image.size}")
-        # print(f"Reconstructed Image Resolution: {reconstructed_image.size}")
+        original_buffer = BytesIO()
+        original_image.save(original_buffer, format="PNG")
+        original_image_byte = original_buffer.getvalue()
+        
+        reconstructed_buffer = BytesIO()
+        reconstructed_image.save(reconstructed_buffer, format="PNG")
+        reconstructed_image_byte = reconstructed_buffer.getvalue()
         
         # Save individual images
         original_image.save(os.path.join(args.output_dir, f"original_{os.path.basename(example['audio_file']).replace('.wav', '')}.png"))
@@ -168,26 +172,21 @@ def evaluate_vae(args):
         plt.savefig(os.path.join(args.output_dir, f"comparison_{os.path.basename(example['audio_file']).replace('.wav', '')}.png"))
         plt.close()
         
-        # Convert spectrogram images to audio
-        original_S_db = image_to_mel_spectrogram(original_image, args.top_db)
-        reconstructed_S_db = image_to_mel_spectrogram(reconstructed_image, args.top_db)
+        Original_mel = byte_to_mel(original_image_byte, args.top_db)
+        # 使用 Griffin-Lim 算法从 Mel 频谱图还原音频
+        Original_audio = mel_spectrogram_to_audio(Original_mel, args.sr, args.n_fft, args.hop_length, args.n_iter)
         
-        y, _ = librosa.load(example["audio_file"], sr=args.sr)
-        # Convert original spectrogram to audio
-        y_original = mel_spectrogram_to_audio(original_S_db, args.sr, args.n_fft, args.hop_length, args.n_iter)
-        # Ensure original audio length matches original audio length
-        y_original = librosa.util.fix_length(y_original, size=len(y))
-        
-        y_reconstructed = mel_spectrogram_to_audio(reconstructed_S_db, args.sr, args.n_fft, args.hop_length, args.n_iter)
-        y_reconstructed = librosa.util.fix_length(y_reconstructed, size=len(y))
-        
+        Reconstructed_mel = byte_to_mel(reconstructed_image_byte, args.top_db)
+        # 使用 Griffin-Lim 算法从 Mel 频谱图还原音频
+        Reconstructed_audio = mel_spectrogram_to_audio(Reconstructed_mel, args.sr, args.n_fft, args.hop_length, args.n_iter)
+                
         # Save original audio file
         output_audio_path_original = os.path.join(args.output_dir, f"original_{os.path.basename(example['audio_file']).replace('.wav', '')}.wav")
-        sf.write(output_audio_path_original, y_original, args.sr)
+        sf.write(output_audio_path_original, Original_audio, args.sr)
         
         # Save reconstructed audio file
         output_audio_path_reconstructed = os.path.join(args.output_dir, f"reconstructed_{os.path.basename(example['audio_file']).replace('.wav', '')}.wav")
-        sf.write(output_audio_path_reconstructed, y_reconstructed, args.sr)
+        sf.write(output_audio_path_reconstructed, Reconstructed_audio, args.sr)
 
 
 if __name__ == "__main__":

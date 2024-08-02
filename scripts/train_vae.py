@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 import torch
 import torchvision
 from datasets import load_dataset, load_from_disk
-from diffusers.pipelines.audio_diffusion import Mel
+from mel import Mel
 from ldm.util import instantiate_from_config
 from librosa.util import normalize
 from omegaconf import OmegaConf
@@ -54,7 +54,7 @@ class AudioDiffusionDataModule(pl.LightningDataModule):
 
 
 class ImageLogger(Callback):
-    def __init__(self, every=1000, hop_length=512, sample_rate=22050, n_fft=2048):
+    def __init__(self, every=1000, hop_length=256, sample_rate=1, n_fft=1):
         super().__init__()
         self.every = every
         self.hop_length = hop_length
@@ -69,6 +69,7 @@ class ImageLogger(Callback):
         pl_module.train()
 
         image_shape = next(iter(images.values())).shape
+        print(image_shape)
         channels = image_shape[1]
         mel = Mel(
             x_res=image_shape[2],
@@ -127,14 +128,14 @@ class HFModelCheckpoint(ModelCheckpoint):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train VAE using ldm.")
-    parser.add_argument("-d", "--dataset_name", type=str, default=None)
+    parser.add_argument("-d", "--dataset_name", type=str, default="data/FSD50K/FSD50K_split_mel_245")
     parser.add_argument("-b", "--batch_size", type=int, default=1)
     parser.add_argument("-c", "--ldm_config_file", type=str, default="config/ldm_autoencoder_kl.yaml")
     parser.add_argument("--ldm_checkpoint_dir", type=str, default="models/ldm-autoencoder-kl")
     parser.add_argument("--hf_checkpoint_dir", type=str, default="models/autoencoder-kl")
     parser.add_argument("-r", "--resume_from_checkpoint", type=str, default=None)
     parser.add_argument("-g", "--gradient_accumulation_steps", type=int, default=1)
-    parser.add_argument("--hop_length", type=int, default=512)
+    parser.add_argument("--hop_length", type=int, default=245)
     parser.add_argument("--sample_rate", type=int, default=22050)
     parser.add_argument("--n_fft", type=int, default=2048)
     parser.add_argument("--save_images_batches", type=int, default=1000)

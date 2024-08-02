@@ -47,3 +47,29 @@ accelerate launch --config_file config/accelerate_local.yaml \
     --learning_rate 1e-4 \
     --lr_warmup_steps 500 
 ```
+
+## Commnad for Train VAE
+```
+python scripts/train_vae.py \
+    --dataset_name data/FSD50K/FSD50K_split_mel \ 
+    --batch_size 4 \ 
+    --gradient_accumulation_steps 12 \ 
+    --sample_rate 44100
+
+nohup python scripts/train_vae.py \
+    --dataset_name data/FSD50K/FSD50K_split_mel_441_22k \
+    --batch_size 4 \
+    --gradient_accumulation_steps 12 \
+    --hop_length 441 \
+    --sample_rate 22050 > train_vae.log 2>&1 &
+
+```
+
+## Command for spec generation
+```
+python scripts/spec_generation_lxx.py \ 
+    --input_dir data/FSD50K/FSD50K_split \ 
+    --output_dir data/FSD50K/FSD50K_split_mel_441 \ 
+    --sample_rate 22050 \ 
+    --hop_length 441
+```

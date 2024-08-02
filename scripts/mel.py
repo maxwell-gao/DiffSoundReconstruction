@@ -104,6 +104,7 @@ class Mel(ConfigMixin, SchedulerMixin):
 
         # Pad with silence if necessary.
         if len(self.audio) < self.x_res * self.hop_length:
+            print(len(self.audio))
             self.audio = np.concatenate([self.audio, np.zeros((self.x_res * self.hop_length - len(self.audio),))])
 
     def get_number_of_slices(self) -> int:

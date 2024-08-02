@@ -299,5 +299,5 @@ def convert_ldm_to_hf_vae(ldm_checkpoint, ldm_config, hf_checkpoint, sample_size
     converted_vae_checkpoint = convert_ldm_vae_checkpoint(checkpoint, vae_config)
 
     vae = AutoencoderKL(**vae_config)
-    vae.load_state_dict(converted_vae_checkpoint)
+    vae.load_state_dict(converted_vae_checkpoint, strict=False)
     vae.save_pretrained(hf_checkpoint)
